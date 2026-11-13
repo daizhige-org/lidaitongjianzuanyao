@@ -110,6 +110,7 @@ function showHome() {
   const juan = S.toc.juan;
   const pages = juan.reduce((n, j) => n + j.to - j.from + 1, 0);
   const proof = juan.reduce((n, j) => n + j.proof, 0);
+  const revPages = juan.reduce((n, j) => n + (j.rev || 0), 0);
   const chars = juan.reduce((n, j) => n + j.chars, 0);
   const last = store.get(LS_LAST, null);
   const lastJ = last && S.byId.get(last.id);
@@ -138,12 +139,14 @@ function showHome() {
           el("b", { text: j.label }),
           el("span", { class: "d", text: j.desc }),
           el("span", { class: "m" }, `第 ${j.vol} 冊　${j.to - j.from + 1} 頁`,
-            j.proof ? el("span", { class: "ok", text: `　已校 ${j.proof}` }) : null))))),
+            j.proof ? el("span", { class: "ok", text: `　已校 ${j.proof}` }) : null,
+            j.rev ? el("span", { class: "ok", text: `　人工校訂 ${j.rev}` }) : null))))),
       el("div", { class: "about" },
         el("h2", { text: "文本來源與可靠程度" },),
         el("p", {},
           "卷次與已校對的文字取自", el("a", { href: "https://zh.wikisource.org/wiki/" + encodeURIComponent(S.toc.work), target: "_blank", rel: "noopener", text: "維基文庫《歷代通鑑纂要》" }),
           `（${S.toc.fetched} 抓取，全書 ${pages.toLocaleString()} 頁中已校對 ${proof} 頁，頁碼旁標「校」）。`,
+          revPages ? `另有 ${revPages} 頁經人工對照原圖校訂，分出了小注，頁碼旁標「訂」。` : "",
           "其餘頁面是中華古籍智慧化服務平台的機器識別和自動標點，沒有人工校對，錯字、斷句錯誤都不少。",
           "白話解釋由同一平台的 AI 生成，時有臆造和張冠李戴，只能幫助理解大意，不可引用。",
           `全書約 ${Math.round(chars / 10000)} 萬字。`),
@@ -162,15 +165,29 @@ function explBox(pg, i, withOrig) {
   const seg = pg.m[i];
   if (!seg || !seg[1]) return null;
   return el("div", { class: "x", "data-x": segKey(pg.p, i) },
-    withOrig ? el("span", { class: "xo", text: "機器標點：" + seg[0] }) : null, seg[1]);
+    withOrig ? el("span", { class: "xo", text: "機器標點：" + plain(seg[0]) }) : null, seg[1]);
+}
+
+/* 正文裡的兩種標記：<small>…</small> 是雙行小注，句首的「（干支）」是欄外所標紀年。
+   逐段建成節點，數據不會被當作 HTML 解釋。 */
+const GZ_RE = /^（([甲乙丙丁戊己已巳庚辛壬癸][子丑寅卯辰巳已午未申酉戌戍亥])）/;
+const plain = (t) => t.replace(/<\/?small>/g, "");
+function rich(t) {
+  const out = [];
+  const gz = GZ_RE.exec(t);
+  if (gz) { out.push(el("span", { class: "gz", text: gz[1] })); t = t.slice(gz[0].length); }
+  t.split(/<small>(.*?)<\/small>/).forEach((part, k) => {
+    if (part) out.push(k % 2 ? el("small", { class: "nt", text: part }) : part);
+  });
+  return out;
 }
 
 function pageMarker(doc, pg, shownWs) {
   const blank = !pg.m.length && !pg.w;
-  return el("div", { class: "pm" + (shownWs ? " ws" : "") + (blank ? " blank" : ""), id: "p" + pg.p },
+  return el("div", { class: "pm" + (shownWs ? " ws" : "") + (pg.h ? " rev" : "") + (blank ? " blank" : ""), id: "p" + pg.p },
     el("button", {
       "data-scan": pg.p, text: String(pg.p),
-      title: `第 ${doc.vol} 冊第 ${pg.p} 頁` + (shownWs ? "，維基文庫已校對" : "，機器標點") + "。點按看掃描原圖",
+      title: `第 ${doc.vol} 冊第 ${pg.p} 頁` + (shownWs ? "，維基文庫已校對" : pg.h ? "，人工校訂" : "，機器標點") + "。點按看掃描原圖",
     }));
 }
 
@@ -184,7 +201,7 @@ function buildText(doc) {
       frag.append(pageMarker(doc, pg, false));
       pg.m.forEach((seg, i) => {
         frag.append(el("div", { class: "seg" + (seg[2] ? " k-" + seg[2] : ""), id: "s" + segKey(pg.p, i) },
-          el("p", { class: "o", "data-s": segKey(pg.p, i), text: seg[0] }),
+          el("p", { class: "o", "data-s": segKey(pg.p, i) }, rich(seg[0])),
           explBox(pg, i, false)));
       });
       continue;
@@ -232,13 +249,14 @@ async function showJuan(r) {
 
     const wsUrl = `https://zh.wikisource.org/wiki/${encodeURIComponent(S.toc.work + "/" + doc.sub)}`;
     const proof = doc.pages.filter((p) => p.w).length;
+    const rev = doc.pages.filter((p) => p.h).length;
     const text = el("div", { class: "text" }, buildText(doc));
     main.replaceChildren(el("article", { class: "col" },
       el("header", { class: "j-head" },
         el("h1", { text: doc.label }),
         el("p", { class: "desc", text: doc.desc }),
         el("p", { class: "meta" }, `第 ${doc.vol} 冊第 ${doc.from}–${doc.to} 頁　`,
-          proof ? `維基文庫已校對 ${proof} 頁　` : "機器標點，未經校對　",
+          rev ? `人工校訂 ${rev} 頁　` : proof ? `維基文庫已校對 ${proof} 頁　` : "機器標點，未經校對　",
           el("a", { href: wsUrl, target: "_blank", rel: "noopener", text: "在維基文庫查看本卷" }))),
       S.set.caveat && el("div", { class: "caveat" },
         el("p", { text: "點任意一句顯示白話解釋，點頁碼看掃描原圖。正文多為機器識別、機器標點，解釋為 AI 生成，錯誤不少，僅供參考。" }),
@@ -277,11 +295,24 @@ async function markMatches(node, q) {
   await loadVariants();
   const re = buildRe(q);
   if (!re) return;
-  const t = node.textContent;
-  node.innerHTML = esc(t).replace(reForEscaped(re), (m) => `<mark>${m}</mark>`);
+  // 逐個文本節點標記，保留句內的小注、干支等結構
+  const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+  const texts = [];
+  while (walker.nextNode()) texts.push(walker.currentNode);
+  for (const tn of texts) {
+    const t = tn.nodeValue, parts = [];
+    let last = 0;
+    for (const m of t.matchAll(re)) {
+      if (!m[0]) continue;
+      if (m.index > last) parts.push(t.slice(last, m.index));
+      parts.push(el("mark", { text: m[0] }));
+      last = m.index + m[0].length;
+    }
+    if (!parts.length) continue;
+    if (last < t.length) parts.push(t.slice(last));
+    tn.replaceWith(...parts);
+  }
 }
-// 正文裡沒有 & < > "，轉義前後字符位置一致，可直接復用
-const reForEscaped = (re) => re;
 
 /* 點句顯示/收起解釋 */
 main.addEventListener("click", (e) => {

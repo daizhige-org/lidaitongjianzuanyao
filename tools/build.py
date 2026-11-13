@@ -416,6 +416,44 @@ def place_heads(pages, plist):
     return outline, hit, len(heads)
 
 
+# ---------------------------------------------------------------- 人工校訂
+
+NOTE_RE = re.compile(r"<small>[^<>]+</small>")
+KINDS = {"", "t", "y", "g", "c"}
+
+
+def plain(t):
+    """去掉小注標記，得到純文本。"""
+    return t.replace("<small>", "").replace("</small>", "")
+
+
+def load_revision(me, plist):
+    """讀取 .src/校訂/<卷>.json：某一卷經人工校訂後的全部句子與綱目，整卷取代機器標點。
+
+    格式同 site/data/j/<卷>.json 裡的 pages[].m 與 outline。正文裡只允許一種標記：
+    <small>…</small> 表示雙行小注；句首的「（干支）」表示欄外所標紀年。
+    其他任何尖括號都會報錯，前端不會把數據當 HTML 解釋。
+    """
+    f = SRC / "校訂" / f"{me}.json"
+    if not f.exists():
+        return None
+    rev = json.loads(f.read_text(encoding="utf-8"))
+    pages = {pg["p"]: pg["m"] for pg in rev["pages"]}
+    if sorted(pages) != plist:
+        sys.exit(f"{f.name}：頁碼應為 {plist[0]}–{plist[-1]} 且不重不漏")
+    for p, m in pages.items():
+        for i, seg in enumerate(m):
+            where = f"{f.name} 第 {p} 頁第 {i + 1} 句"
+            if len(seg) != 3 or seg[2] not in KINDS or not all(isinstance(x, str) for x in seg):
+                sys.exit(f"{where}：應為 [原文, 解釋, 類型]，類型為 t/y/g/c 或空")
+            if re.search(r"[<>&]", NOTE_RE.sub("", seg[0])) or re.search(r"[<>&]", seg[1]):
+                sys.exit(f"{where}：只允許成對且不嵌套的 <small>…</small>：{seg[0][:40]}")
+    for lv, title, p, i in rev["outline"]:
+        if lv not in (1, 2) or p not in pages or not 0 <= i < len(pages[p]):
+            sys.exit(f"{f.name} 綱目「{title}」指向不存在的句子（第 {p} 頁第 {i + 1} 句）")
+    return pages, rev["outline"]
+
+
 # ---------------------------------------------------------------- 主流程
 
 def main():
@@ -447,11 +485,18 @@ def main():
         for p in plist:
             pages.setdefault(p, {"segs": [], "heads": []})
             covered.add((vol, p))
-        outline, hit, total = place_heads(pages, plist)
-        hit_total += hit
-        head_total += total
+        me = jid(j["sub"])
+        rev = load_revision(me, plist)
+        if rev:
+            outline = rev[1]
+            for p in plist:
+                pages[p]["segs"] = rev[0][p]
+        else:
+            outline, hit, total = place_heads(pages, plist)
+            hit_total += hit
+            head_total += total
 
-        out_pages, search_lines, n_chars, n_proof = [], [], 0, 0
+        out_pages, search_lines, n_chars, n_proof, n_rev = [], [], 0, 0, 0
         quality = j.get("quality", {})
         ws_pages = parse_ws(j.get("html", ""))
         prev_shown = None
@@ -465,7 +510,12 @@ def main():
             if q is not None:
                 entry["q"] = q
             wp = ws_pages.get(p)
-            if wp and wp["b"] and (q or 0) >= PROOFREAD:
+            if rev:
+                # 人工校訂的頁不再疊加維基文庫校本：校訂稿帶小注與解釋，已是更完整的一份
+                if segs:
+                    entry["h"] = 1
+                    n_rev += 1
+            elif wp and wp["b"] and (q or 0) >= PROOFREAD:
                 aligned, ok = align_ws(wp["b"], segs)
                 entry["w"] = {"c": int(bool(wp["c"] and prev_shown == p - 1)), "b": aligned}
                 prev_shown = p
@@ -474,10 +524,9 @@ def main():
                 n_proof += 1
             out_pages.append(entry)
             for i, seg in enumerate(segs):
-                n_chars += len(norm(seg[0]))
-                search_lines.append(f"{p}\t{i}\t{seg[0]}")
+                n_chars += len(norm(plain(seg[0])))
+                search_lines.append(f"{p}\t{i}\t{plain(seg[0])}")
 
-        me = jid(j["sub"])
         nav = lambda k: ({"id": jid(juan[k]["sub"]), "label": juan[k]["label"]}
                          if 0 <= k < len(juan) else None)
         doc = {"id": me, "label": j["label"], "desc": j["desc"], "sub": j["sub"], "vol": vol,
@@ -490,7 +539,7 @@ def main():
         num = int(me) if me.isdigit() else 0
         era = next((name for name, a, b in ERAS if a <= num <= b), "卷首")
         toc.append({"id": me, "label": j["label"], "desc": j["desc"], "era": era, "vol": vol,
-                    "from": r["from"], "to": r["to"], "chars": n_chars, "proof": n_proof,
+                    "from": r["from"], "to": r["to"], "chars": n_chars, "proof": n_proof, "rev": n_rev,
                     "ws": len(quality)})
 
     # 未被任何卷收錄、卻有文字的頁（封面、牌記等），僅報告
@@ -508,6 +557,7 @@ def main():
           f"{sum(t['chars'] for t in toc):,} 字，輸出 {size / 1e6:.1f} MB -> {OUT.relative_to(ROOT)}")
     print(f"綱目標題定位：{hit_total}/{head_total}；缺解釋的句子：{stats['missing_expl']}")
     print(f"清理括號/標點殘片 {stats['cleaned']} 句，欄外干支併入紀年 {stats['merged']} 處，清空刪除 {stats['dropped']} 句")
+    print(f"人工校訂：{sum(1 for t in toc if t['rev'])} 卷 {sum(t['rev'] for t in toc)} 頁")
     print(f"採用維基文庫校對文本的頁：{ws_shown}（其中與機器標點對不上的 {ws_bad} 頁）")
     n, zsize = make_zip()
     print(f"離線包：{n} 個文件，{zsize / 1e6:.1f} MB -> {ZIP.relative_to(ROOT)}")

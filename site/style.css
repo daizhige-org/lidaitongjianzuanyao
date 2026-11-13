@@ -252,6 +252,7 @@ article.col { max-width: calc(37em + 112px); padding: 0 56px; } /* 兩側留出�
 }
 .pm button:hover { color: var(--zhu); background: var(--paper-2); }
 .pm.ws button::after { content: "校"; margin-left: 4px; color: var(--ok); font-family: var(--song); }
+.pm.rev button::after { content: "訂"; margin-left: 4px; color: var(--ok); font-family: var(--song); }
 .pm.blank button::after { content: "空白"; margin-left: 4px; }
 .pm.cur button { color: var(--zhu); }
 .pmi {
@@ -284,6 +285,13 @@ article.col { max-width: calc(37em + 112px); padding: 0 56px; } /* 兩側留出�
 .on, .o.on:hover, .r.on:hover { background: var(--dian-bg); }
 .r { border-radius: 3px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 .r.n, .wp .n { font-size: .78em; color: var(--ink-2); }
+/* 機器標點與校訂稿裡的小注、欄外干支 */
+.o .nt { font: 400 .8em var(--kai); color: var(--ink-2); }
+.k-y .o .nt, .k-g .o .nt { font-size: .74em; }
+.o .gz {
+  display: inline-block; margin-right: .5em; padding: 0 .3em; border: 1px solid currentColor; border-radius: 2px;
+  font: 400 .78em/1.5 var(--kai); color: var(--ink-2); vertical-align: .12em; letter-spacing: .05em;
+}
 .flash { animation: flash 1.6s ease-out; }
 @keyframes flash { from { background: var(--hit); } to { background: transparent; } }
 mark { background: var(--hit); color: inherit; border-radius: 2px; }
