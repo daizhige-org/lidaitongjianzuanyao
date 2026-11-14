@@ -515,6 +515,7 @@ def main():
                 if segs:
                     entry["h"] = 1
                     n_rev += 1
+                    n_proof += (q or 0) >= PROOFREAD  # 校訂稿已同步到維基文庫並標為已校對
             elif wp and wp["b"] and (q or 0) >= PROOFREAD:
                 aligned, ok = align_ws(wp["b"], segs)
                 entry["w"] = {"c": int(bool(wp["c"] and prev_shown == p - 1)), "b": aligned}
