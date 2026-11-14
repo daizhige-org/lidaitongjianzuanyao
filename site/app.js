@@ -152,7 +152,15 @@ function showHome() {
           `全書約 ${Math.round(chars / 10000)} 萬字。`),
         el("p", {},
           el("a", { href: "full-site-download.zip", download: "", text: "下載整站離線包（zip）" }),
-          "，內含本站全部頁面、各卷正文與解釋的數據，解壓後按包內 README.txt 的說明即可離線閱讀；掃描原圖不在包內。")))));
+          "，內含本站全部頁面、各卷正文與解釋的數據，解壓後按包內 README.txt 的說明即可離線閱讀；掃描原圖不在包內。"),
+        el("h2", { text: "版權說明", style: "margin-top:18px" }),
+        el("p", { text: "《歷代通鑑纂要》原書（明李東陽等奉敕撰，正德二年內府刻本）屬公有領域。掃描圖為重慶圖書館藏本，載於維基共享資源。" }),
+        el("p", {}, "本站所用的維基文庫文本，底稿由殆知閣整理並上傳至維基文庫，依維基文庫的 ",
+          el("a", { href: "https://creativecommons.org/licenses/by-sa/4.0/deed.zh-hant", target: "_blank", rel: "noopener", text: "CC BY-SA 4.0" }),
+          " 協議發佈；維基文庫用戶其後所作的修訂（包括卷一的人工校訂稿）同樣依該協議授權。原書文字屬公有領域的部分，殆知閣不主張任何版權，CC BY-SA 僅及於整理、校訂中可能產生權利的部分。"),
+        el("p", { text: "其餘頁面的機器識別、自動標點文本和白話解釋出自中華古籍智慧化服務平台，不在上述授權之列，殆知閣對其不主張任何權利。" }),
+        el("p", {}, "網站本身（程序與界面設計）版權歸殆知閣所有，依 GNU Affero 通用公共許可證第 3 版或其後版本（AGPL-3.0-or-later）發佈，",
+          el("a", { href: "https://github.com/daizhige-org/lidaitongjianzuanyao", target: "_blank", rel: "noopener", text: "源代碼在 GitHub" }), "。")))));
   window.scrollTo(0, 0);
 }
 
