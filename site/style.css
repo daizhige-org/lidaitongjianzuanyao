@@ -358,6 +358,15 @@ mark { background: var(--hit); color: inherit; border-radius: 2px; }
 .scan-body img { display: block; width: 100%; height: auto; background: #fff; cursor: zoom-in; }
 .scan-body.zoom img { width: 200%; max-width: none; cursor: zoom-out; }
 .scan-body p { color: var(--ink-2); padding: 30px 10px; line-height: 1.9; }
+.scan-body img { transition: opacity .15s; }
+.scan.loading .scan-body img { opacity: .35; }
+.scan.loading::after {
+  content: ""; position: absolute; top: 45%; left: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px;
+  border: 3px solid var(--rule); border-top-color: var(--zhu); border-radius: 50%; pointer-events: none;
+  opacity: 0; animation: spin .8s linear infinite, spin-in .2s .12s forwards; /* 緩存命中時不閃一下 */
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin-in { to { opacity: 1; } }
 @media (min-width: 1000px) { body.scan-open { --scan: min(44vw, 720px); } }
 @media (max-width: 999px) { .scan { width: 100%; } }
 

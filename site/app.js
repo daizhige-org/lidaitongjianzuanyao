@@ -628,6 +628,7 @@ function openScan(p, { auto = false } = {}) {
   if (!doc) return;
   if (!auto) requestAnimationFrame(pinScan); // 等這次定位滾動完成後再記位置
   if (S.scan && S.scan.vol === doc.vol && S.scan.p === p && !$("#scan").hidden) return;
+  const prev = S.scan;
   S.scan = { vol: doc.vol, p };
   const file = S.toc.files[doc.vol];
   const pg = doc.pages.find((x) => x.p === p);
@@ -641,15 +642,27 @@ function openScan(p, { auto = false } = {}) {
     pg ? el("a", { href: `#/j/${doc.id}/${p}`, text: "回到正文這一頁" }) : null,
     wsPage ? el("a", { href: wsPage, target: "_blank", rel: "noopener",
       text: status ? `在維基文庫校對（${status}）` : "在維基文庫錄入這一頁" }) : null);
-  const body = $("#scan-body");
-  body.classList.remove("zoom");
+  const body = $("#scan-body"), panel = $("#scan");
   if (file) {
-    const img = el("img", { alt: `第 ${doc.vol} 冊第 ${p} 頁掃描圖`, src: file.thumb.replace("{p}", p) });
+    // 新圖載入完成前，舊圖留在原處（變淡）並顯示載入動畫，載好再替換
+    const img = el("img", { alt: `第 ${doc.vol} 冊第 ${p} 頁掃描圖` });
+    const current = () => S.scan && S.scan.vol === doc.vol && S.scan.p === p;
+    const show = (node) => {
+      if (!current()) return; // 已經翻到別的頁了
+      panel.classList.remove("loading");
+      body.classList.remove("zoom");
+      body.replaceChildren(node);
+      body.scrollTop = 0;
+    };
     img.onclick = () => body.classList.toggle("zoom");
-    img.onerror = () => body.replaceChildren(el("p", { text: "掃描圖沒能載入，可能是網絡不通，或維基共享資源暫時不可用。" }));
-    body.replaceChildren(img);
-    body.scrollTop = 0;
+    img.onload = () => show(img);
+    img.onerror = () => show(el("p", { text: "掃描圖沒能載入，可能是網絡不通，或維基共享資源暫時不可用。" }));
+    if (!(prev && prev.vol === doc.vol && body.querySelector("img"))) body.replaceChildren();
+    panel.classList.add("loading");
+    img.src = file.thumb.replace("{p}", p);
   } else {
+    panel.classList.remove("loading");
+    body.classList.remove("zoom");
     body.replaceChildren(el("p", { text: `沒有取到第 ${doc.vol} 冊掃描本的地址。重新運行 tools/fetch_wikisource.py 和 build.py 後再試。` }));
   }
   if ($("#scan").hidden) {
