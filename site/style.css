@@ -19,12 +19,15 @@
   --top: 52px;
   --side: 300px;
   --scan: 0px;
+  /* "Source Han Serif TC" 與 "Jigmo TC" 由 index.html 引入的 jigmo-tc.css 提供（按 256 碼位分塊，
+     用到才下載）：前者本機沒裝時補常用字，後者兜底擴展區生僻字，故須排在本機大字集字體之前 */
   --song: "Songti TC", "Songti SC", "Noto Serif CJK TC", "Noto Serif TC", "Source Han Serif TC",
-          "Source Han Serif", STSong, SimSun, "PMingLiU", "HanaMinA", "HanaMinB", "Plangothic P1",
-          "Plangothic P2", "SimSun-ExtB", "PMingLiU-ExtB", "TH-Tshyn-P2", serif;
-  --kai: "Kaiti TC", "Kaiti SC", STKaiti, "BiauKai", KaiTi, "DFKai-SB", "Noto Serif CJK SC", serif;
+          "Jigmo TC", "Source Han Serif", STSong, SimSun, "PMingLiU", "HanaMinA", "HanaMinB",
+          "Plangothic P1", "Plangothic P2", "SimSun-ExtB", "PMingLiU-ExtB", "TH-Tshyn-P2", serif;
+  --kai: "Kaiti TC", "Kaiti SC", STKaiti, "BiauKai", KaiTi, "DFKai-SB", "Noto Serif CJK SC",
+         "Jigmo TC", serif;
   --ui: -apple-system, "PingFang TC", "PingFang SC", "Microsoft JhengHei", "Noto Sans CJK TC",
-        "Helvetica Neue", sans-serif;
+        "Helvetica Neue", "Jigmo TC", sans-serif;
 }
 :root[data-theme="dark"] {
   --paper: #16181a; --paper-2: #1e2124; --card: #1b1e20; --ink: #dcd8ce; --ink-2: #a5a198;
