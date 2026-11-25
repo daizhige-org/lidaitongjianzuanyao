@@ -257,6 +257,8 @@ article.col { max-width: calc(37em + 112px); padding: 0 56px; } /* 兩側留出�
 .pm.ws button::after { content: "校"; margin-left: 4px; color: var(--ok); font-family: var(--song); }
 .pm.rev button::after { content: "訂"; margin-left: 4px; color: var(--ok); font-family: var(--song); }
 .pm.blank button::after { content: "空白"; margin-left: 4px; }
+.pm.alt button::after, .pmi.alt::after { content: "他本"; margin-left: 4px; color: var(--zhu); }
+.pm.alt.rev button::after { content: "他本・訂"; }
 .pm.cur button { color: var(--zhu); }
 .pmi {
   font: 11px var(--ui); color: var(--ink-3); vertical-align: .35em; margin: 0 .25em; padding: 0 3px;
@@ -357,6 +359,7 @@ mark { background: var(--hit); color: inherit; border-radius: 2px; }
 .scan header strong { flex: 1; font-weight: 600; font-variant-numeric: tabular-nums; }
 .scan header .icon { font-size: 22px; line-height: 1; }
 .scan-links { padding: 0 16px 8px; font-size: 13px; display: flex; gap: 16px; flex-wrap: wrap; flex: none; }
+.scan-links .pnote { flex-basis: 100%; color: var(--ink-2); line-height: 1.6; }
 .scan-body { flex: 1; overflow: auto; padding: 0 12px 20px; }
 .scan-body img { display: block; width: 100%; height: auto; background: #fff; cursor: zoom-in; }
 .scan-body.zoom img { width: 200%; max-width: none; cursor: zoom-out; }

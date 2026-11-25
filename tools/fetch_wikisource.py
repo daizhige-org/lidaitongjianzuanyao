@@ -25,6 +25,8 @@ PAGENUM_RE = re.compile(
     r'<span><span class="pagenum[^>]*?data-page-number="(\d+)"[^>]*?data-page-name="([^"]*)"[^>]*?>'
     r'.*?</span></span></span>', re.S)
 QUALITY_RE = re.compile(r'data-page-quality="(\d+)"')
+PAGES_RE = re.compile(r'<pages index="([^"]+)"\s+from=(\d+)\s+to=(\d+)')
+VOL_RE = re.compile(r"第(\d+)冊\.pdf$")
 
 
 def api(**kw):
@@ -53,32 +55,43 @@ def wikitext(titles):
     return out
 
 
-def pages_fragment(page_html):
+def pages_fragment(page_html, alt_keys):
     """取出 <div class="prp-pages-output"> 的內容，並把冗長的頁碼標記壓成 <pb n q/>。
 
+    alt_keys 是 {(他本索引名, 頁號): 本卷裡的頁號}：據他本補入的頁用後者標記。
     返回 (簡化後的 HTML, {頁號: 校對等級}, 索引名)。
     """
-    start = page_html.find('<div class="prp-pages-output"')
-    if start < 0:
-        return "", {}, None
-    start = page_html.index(">", start) + 1
-    depth, end = 1, len(page_html)
-    for m in re.finditer(r"<(/?)div\b", page_html[start:]):
-        depth += -1 if m.group(1) else 1
-        if depth == 0:
-            end = start + m.start()
+    parts, pos = [], 0
+    while True:     # 一卷可以由幾個 <pages> 拼成（中間插入據他本補的缺葉），各有一個輸出塊
+        start = page_html.find('<div class="prp-pages-output"', pos)
+        if start < 0:
             break
+        start = page_html.index(">", start) + 1
+        depth, end = 1, len(page_html)
+        for m in re.finditer(r"<(/?)div\b", page_html[start:]):
+            depth += -1 if m.group(1) else 1
+            if depth == 0:
+                end = start + m.start()
+                break
+        parts.append(page_html[start:end])
+        pos = end
+    if not parts:
+        return "", {}, None
     quality, index = {}, None
 
     def pb(m):
         nonlocal index
         n, name = m.group(1), html.unescape(m.group(2))
+        this = name.split(":", 1)[1].rsplit("/", 1)[0]
+        if (this, int(n)) in alt_keys:
+            n = alt_keys[this, int(n)]      # 據他本補入的頁
+        else:
+            index = index or this
         q = QUALITY_RE.search(m.group(0))
         quality[n] = int(q.group(1)) if q else None
-        index = index or name.split(":", 1)[1].rsplit("/", 1)[0]
         return f'<pb n="{n}"/>'
 
-    return PAGENUM_RE.sub(pb, page_html[start:end]).strip(), quality, index
+    return PAGENUM_RE.sub(pb, "\n".join(parts)).strip(), quality, index
 
 
 def main():
@@ -89,25 +102,38 @@ def main():
         juan.append({"sub": sub, "label": label.strip(), "desc": desc.strip().replace("　", " ")})
     print("目錄條目：", len(juan))
 
-    # 2. 各卷子頁的 wikitext -> 頁碼範圍
+    # 2. 各卷子頁的 wikitext -> 頁碼範圍。底本缺葉、子頁裡在兩段之間另外嵌入他本一頁的
+    #    （<pages> 的索引名裡沒有「第N冊」），記作前一頁頁號加 .5 的一頁，圖和 Page 頁都取自他本。
+    alt = {}
     by_title = wikitext([f"{WORK}/{j['sub']}" for j in juan])
     for j in juan:
         w = by_title.get(f"{WORK}/{j['sub']}", "")
-        j["ranges"] = [
-            {"vol": int(v), "from": int(a), "to": int(b)}
-            for v, a, b in re.findall(r'<pages index="[^"]*第(\d+)冊\.pdf"\s+from=(\d+)\s+to=(\d+)', w)
-        ]
+        j["ranges"], j["alt_keys"] = [], {}
+        for name, a, b in PAGES_RE.findall(w):
+            a, b, vol = int(a), int(b), VOL_RE.search(name)
+            last = j["ranges"][-1] if j["ranges"] else None
+            if not vol:
+                if not last or a != b:
+                    raise SystemExit(f"{j['sub']}：他本的頁應當一次嵌入一頁，且接在底本的某一頁之後")
+                key = f"{last['to']}.5"
+                alt.setdefault(str(last["vol"]), {})[key] = {"index": name, "page": a}
+                j["alt_keys"][name, a] = key
+            elif last and last["vol"] == int(vol.group(1)) and last["to"] + 1 == a:
+                last["to"] = b          # 中間插了他本的頁，本冊頁碼仍然連續
+            else:
+                j["ranges"].append({"vol": int(vol.group(1)), "from": a, "to": b})
         if not j["ranges"]:
             print("  ! 沒有找到頁碼範圍：", j["sub"])
 
     # 3. 各卷渲染後的 HTML -> 逐頁文本、校對等級、索引名
     index, counts = {}, {}
     for n, j in enumerate(juan, 1):
+        alt_keys = j.pop("alt_keys")
         if not j["ranges"]:
             continue
         d = api(action="parse", page=f"{WORK}/{j['sub']}", prop="text",
                 disablelimitreport="1", disableeditsection="1")
-        j["html"], j["quality"], name = pages_fragment(d["parse"]["text"])
+        j["html"], j["quality"], name = pages_fragment(d["parse"]["text"], alt_keys)
         if name:
             index[str(j["ranges"][0]["vol"])] = name
         for q in j["quality"].values():
@@ -116,16 +142,21 @@ def main():
     print("\n各校對等級的頁數：", dict(sorted(counts.items(), key=lambda kv: str(kv[0]))))
 
     # 4. 掃描 PDF 的縮略圖地址（文件名每冊編號不同，取自上一步的索引名）
-    files = {}
+    files, alts = {}, [a for d in alt.values() for a in d.values()]
     d = api(action="query", prop="imageinfo", iiprop="url|size", iiurlwidth="1280",
-            titles="|".join("File:" + name for name in index.values()))
+            titles="|".join("File:" + name for name in [*index.values(), *{a["index"] for a in alts}]))
     for p in d["query"]["pages"]:
         ii = (p.get("imageinfo") or [None])[0]
-        m = re.search(r"第(\d+)冊\.pdf$", p["title"])
-        if ii and m and ii.get("thumburl"):
-            thumb = re.sub(r"\?.*$", "", ii["thumburl"])
-            thumb = re.sub(r"/page\d+-(\d+)px-", r"/page{p}-\1px-", thumb)
+        m = VOL_RE.search(p["title"])
+        if not (ii and ii.get("thumburl")):
+            continue
+        thumb = re.sub(r"\?.*$", "", ii["thumburl"])
+        thumb = re.sub(r"/page\d+-(\d+)px-", r"/page{p}-\1px-", thumb)
+        if m and p["title"].split(":", 1)[1] in index.values():
             files[m.group(1)] = {"pagecount": ii.get("pagecount"), "thumb": thumb}
+        for a in alts:
+            if "File:" + a["index"] == p["title"]:
+                a["thumb"] = thumb
     print(f"索引 {len(index)} 冊，取到掃描圖 {len(files)} 冊")
     if len(files) < len(index):
         print("  ! 沒取到掃描圖的冊：", sorted(set(index) - set(files), key=int))
@@ -133,8 +164,11 @@ def main():
     OUT.parent.mkdir(exist_ok=True)
     OUT.write_text(json.dumps({
         "fetched": time.strftime("%Y-%m-%d"), "work": WORK,
-        "index": index, "files": files, "juan": juan,
+        "index": index, "files": files, "alt": alt, "juan": juan,
     }, ensure_ascii=False, indent=1), encoding="utf-8")
+    for v, d in alt.items():
+        for k, a in d.items():
+            print(f"據他本補頁：第 {v} 冊第 {k} 頁 -> {a['index']} 第 {a['page']} 頁")
     print("已寫入", OUT)
 
 

@@ -168,6 +168,13 @@ function showHome() {
 
 const useWs = (pg) => S.set.src === "best" && pg.w;
 const segKey = (p, i) => `${p}-${i}`;
+// 元素 id 裡的頁號可以帶小數點（據他本補入的頁，如 31.5），所以不用 #id 選擇器
+const byId = (id) => document.getElementById(id);
+/* 底本缺葉、維基文庫據他本補入的頁：頁號是前一頁加 .5，圖和 Page 頁的地址在 toc.json 的 alt 裡 */
+const altOf = (doc, p) => S.toc.alt?.[doc.vol]?.[p];
+const pageLabel = (p) => Number.isInteger(p) ? String(p) : `${Math.floor(p)}＋`;
+const pageName = (doc, p) => Number.isInteger(p) ? `第 ${doc.vol} 冊第 ${p} 頁`
+  : `第 ${doc.vol} 冊第 ${Math.floor(p)}、${Math.ceil(p)} 頁之間（他本）`;
 
 function explBox(pg, i, withOrig) {
   const seg = pg.m[i];
@@ -192,10 +199,11 @@ function rich(t) {
 
 function pageMarker(doc, pg, shownWs) {
   const blank = !pg.m.length && !pg.w;
-  return el("div", { class: "pm" + (shownWs ? " ws" : "") + (pg.h ? " rev" : "") + (blank ? " blank" : ""), id: "p" + pg.p },
+  return el("div", { class: "pm" + (shownWs ? " ws" : "") + (pg.h ? " rev" : "") + (blank ? " blank" : "") + (pg.a ? " alt" : ""), id: "p" + pg.p },
     el("button", {
-      "data-scan": pg.p, text: String(pg.p),
-      title: `第 ${doc.vol} 冊第 ${pg.p} 頁` + (shownWs ? "，維基文庫已校對" : pg.h ? "，人工校訂" : "，機器標點") + "。點按看掃描原圖",
+      "data-scan": pg.p, text: pageLabel(pg.p),
+      title: pageName(doc, pg.p) + (shownWs ? "，維基文庫已校對" : pg.h ? "，人工校訂" : "，機器標點") +
+        (pg.a ? "；底本缺這一開，文字和圖取自他本" : "") + "。點按看掃描原圖",
     }));
 }
 
@@ -220,8 +228,8 @@ function buildText(doc) {
       if (bi === 0 && pg.w.c && openPara) {
         // 段落跨頁：接在上一頁的段落後面，頁碼標在行內
         [para, xs] = openPara;
-        para.append(el("button", { class: "pmi", id: "p" + pg.p, "data-scan": pg.p, text: String(pg.p),
-          title: `第 ${doc.vol} 冊第 ${pg.p} 頁，維基文庫已校對。點按看掃描原圖` }));
+        para.append(el("button", { class: "pmi" + (pg.a ? " alt" : ""), id: "p" + pg.p, "data-scan": pg.p, text: pageLabel(pg.p),
+          title: pageName(doc, pg.p) + "，維基文庫已校對" + (pg.a ? "；底本缺這一開，文字和圖取自他本" : "") + "。點按看掃描原圖" }));
       } else {
         if (bi === 0) frag.append(pageMarker(doc, pg, true));
         para = el(kind === "h" ? "h3" : "p", { class: kind === "h" ? "wh" : kind === "c" ? "wc" : "wp" });
@@ -283,8 +291,8 @@ async function showJuan(r) {
 
   // 定位
   let target = null;
-  if (r.p != null && r.s != null) target = $(`#s${segKey(r.p, r.s)}`) || $(`[data-s="${segKey(r.p, r.s)}"]`);
-  if (!target && r.p != null) target = $(`#p${r.p}`);
+  if (r.p != null && r.s != null) target = byId("s" + segKey(r.p, r.s)) || $(`[data-s="${segKey(r.p, r.s)}"]`);
+  if (!target && r.p != null) target = byId("p" + r.p);
   if (target) {
     target.scrollIntoView({ block: "start" });
     if (r.s != null) {
@@ -358,7 +366,7 @@ function onScroll() {
       $$(".pm.cur", main).forEach((n) => n.classList.remove("cur"));
       m.classList.add("cur");
       $("#where").replaceChildren(el("b", { text: doc.label }), el("span", { class: "d", text: doc.desc }),
-        el("span", { class: "pg", text: `第 ${doc.vol} 冊 ${p} 頁` }));
+        el("span", { class: "pg", text: `第 ${doc.vol} 冊 ${pageLabel(p)} 頁` }));
       store.set(LS_LAST, { id: doc.id, p });
       const r = parseHash();
       if (r.p !== p && (r.p != null || scrollY > 200)) {
@@ -424,7 +432,7 @@ function setOutline(doc) {
   }
   list.replaceChildren(...doc.outline.map(([lv, title, p, i]) => {
     const a = el("a", { class: "l" + lv, href: `#/j/${doc.id}/${p}` + (i >= 0 ? `/${i}` : ""), text: title });
-    const target = (i >= 0 && ($(`#s${segKey(p, i)}`) || $(`[data-s="${segKey(p, i)}"]`))) || $(`#p${p}`);
+    const target = (i >= 0 && (byId("s" + segKey(p, i)) || $(`[data-s="${segKey(p, i)}"]`))) || byId("p" + p);
     outlineLinks.push({ a, target, text: title });
     return a;
   }));
@@ -638,22 +646,26 @@ function openScan(p, { auto = false } = {}) {
   if (S.scan && S.scan.vol === doc.vol && S.scan.p === p && !$("#scan").hidden) return;
   const prev = S.scan;
   S.scan = { vol: doc.vol, p };
-  const file = S.toc.files[doc.vol];
   const pg = doc.pages.find((x) => x.p === p);
-  const index = S.toc.index[doc.vol];
-  const wsPage = index && `https://zh.wikisource.org/wiki/${encodeURIComponent(`Page:${index}/${p}`)}`;
-  $("#scan-title").textContent = `第 ${doc.vol} 冊第 ${p} 頁`;
+  // 底本缺葉，維基文庫的索引頁在這個位置連到他本的頁；圖和鏈接跟著換
+  const alt = altOf(doc, p);
+  const file = alt || S.toc.files[doc.vol];
+  const index = alt ? alt.index : S.toc.index[doc.vol];
+  const wsPage = index && `https://zh.wikisource.org/wiki/${encodeURIComponent(`Page:${index}/${alt ? alt.page : p}`)}`;
+  $("#scan-title").textContent = pageName(doc, p);
+  const count = S.toc.files[doc.vol]?.pagecount;
   $("#scan-prev").disabled = p <= 1;
-  $("#scan-next").disabled = file?.pagecount ? p >= file.pagecount : false;
+  $("#scan-next").disabled = count ? p >= count : false;
   const status = pg && pg.q != null ? ["沒有文字", "未校對", "有問題", "已校對", "已核對"][pg.q] || "" : "";
   $("#scan-links").replaceChildren(
     pg ? el("a", { href: `#/j/${doc.id}/${p}`, text: "回到正文這一頁" }) : null,
     wsPage ? el("a", { href: wsPage, target: "_blank", rel: "noopener",
-      text: status ? `在維基文庫校對（${status}）` : "在維基文庫錄入這一頁" }) : null);
+      text: status ? `在維基文庫校對（${status}）` : "在維基文庫錄入這一頁" }) : null,
+    alt ? el("span", { class: "pnote", text: `底本缺這一開，圖取自他本：${alt.index} 第 ${alt.page} 頁（對開）。` }) : null);
   const body = $("#scan-body"), panel = $("#scan");
   if (file) {
     // 新圖載入完成前，舊圖留在原處（變淡）並顯示載入動畫，載好再替換
-    const img = el("img", { alt: `第 ${doc.vol} 冊第 ${p} 頁掃描圖` });
+    const img = el("img", { alt: pageName(doc, p) + "掃描圖" });
     const current = () => S.scan && S.scan.vol === doc.vol && S.scan.p === p;
     const show = (node) => {
       if (!current()) return; // 已經翻到別的頁了
@@ -667,7 +679,7 @@ function openScan(p, { auto = false } = {}) {
     img.onerror = () => show(el("p", { text: "掃描圖沒能載入，可能是網絡不通，或維基共享資源暫時不可用。" }));
     if (!(prev && prev.vol === doc.vol && body.querySelector("img"))) body.replaceChildren();
     panel.classList.add("loading");
-    img.src = file.thumb.replace("{p}", p);
+    img.src = file.thumb.replace("{p}", alt ? alt.page : p);
   } else {
     panel.classList.remove("loading");
     body.classList.remove("zoom");
@@ -677,7 +689,7 @@ function openScan(p, { auto = false } = {}) {
     // 版面變窄會讓正文重排：打開後把點的那一頁留在視野裡
     $("#scan").hidden = false;
     document.body.classList.add("scan-open");
-    if (wide() && !auto) $(`#p${p}`)?.scrollIntoView({ block: "start" });
+    if (wide() && !auto) byId("p" + p)?.scrollIntoView({ block: "start" });
   }
   $("#btn-scan").setAttribute("aria-pressed", "true");
 }
@@ -689,7 +701,7 @@ function closeScan() {
   const p = S.doc && S.curP;
   $("#scan").hidden = true;
   document.body.classList.remove("scan-open");
-  if (p != null && wide()) $(`#p${p}`)?.scrollIntoView({ block: "start" });
+  if (p != null && wide()) byId("p" + p)?.scrollIntoView({ block: "start" });
 }
 // 用戶主動開關才記住偏好；換卷、回首頁時的自動關閉不算
 function toggleScan(open = !S.scan) {
@@ -702,10 +714,12 @@ $("#btn-scan").onclick = () => toggleScan();
 // 在掃描圖上翻頁：正文跟著跳到那一頁；翻出本卷範圍就進入同一冊裡相鄰的卷
 function flipScan(step) {
   if (!S.scan || !S.doc) return;
-  const p = S.scan.p + step, doc = S.doc;
+  const doc = S.doc, at = doc.pages.findIndex((x) => x.p === S.scan.p), near = doc.pages[at + step];
+  // 本卷之內按頁序翻（中間可能夾著據他本補入的頁）；出了本卷按底本的頁號加減
+  const p = at >= 0 && near ? near.p : step > 0 ? Math.floor(S.scan.p) + 1 : Math.ceil(S.scan.p) - 1;
   if (p >= doc.from && p <= doc.to) {
     openScan(p, { auto: true });
-    $(`#p${p}`)?.scrollIntoView({ block: "start" });
+    byId("p" + p)?.scrollIntoView({ block: "start" });
     pinScan();
     return;
   }
@@ -751,7 +765,7 @@ function applySet() {
 function keepPlace(fn) {
   const p = S.doc && S.curP;
   fn();
-  if (p != null) requestAnimationFrame(() => { $(`#p${p}`)?.scrollIntoView({ block: "start" }); onScroll(); });
+  if (p != null) requestAnimationFrame(() => { byId("p" + p)?.scrollIntoView({ block: "start" }); onScroll(); });
 }
 function toggleAll(v = !S.set.all) { keepPlace(() => { saveSet({ all: v }); applySet(); }); }
 

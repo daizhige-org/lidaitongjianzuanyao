@@ -223,7 +223,7 @@ class WsParser(HTMLParser):
         if tag == "pb":
             cont = bool(self.block and self.block[1])   # 段落寫到一半就換頁
             kind = self.block[0] if cont else None
-            self.page = self.pages.setdefault(int(a["n"]), {"c": int(cont), "b": []})
+            self.page = self.pages.setdefault(page_no(a["n"]), {"c": int(cont), "b": []})
             self.block = None
             if cont:
                 self.block = [kind, []]
@@ -276,6 +276,11 @@ class WsParser(HTMLParser):
             runs[-1][0] += text
         else:
             runs.append([text, note])
+
+
+def page_no(s):
+    """頁號：底本的頁是整數；據他本補入的頁記作前一頁加 .5（如 31.5）。"""
+    return float(s) if "." in str(s) else int(s)
 
 
 def parse_ws(html_text):
@@ -445,6 +450,7 @@ def load_revision(me, plist):
     格式同 site/data/j/<卷>.json 裡的 pages[].m 與 outline。正文裡只允許一種標記：
     <small>…</small> 表示雙行小注；句首的「（干支）」表示欄外所標紀年。
     其他任何尖括號都會報錯，前端不會把數據當 HTML 解釋。
+    底本缺葉、維基文庫據他本補入的頁，頁號是前一頁加 .5（如 31.5），同 wikisource.json 的 alt。
     """
     f = SRC / "校訂" / f"{me}.json"
     if not f.exists():
@@ -452,7 +458,7 @@ def load_revision(me, plist):
     rev = json.loads(f.read_text(encoding="utf-8"))
     pages = {pg["p"]: pg["m"] for pg in rev["pages"]}
     if sorted(pages) != plist:
-        sys.exit(f"{f.name}：頁碼應為 {plist[0]}–{plist[-1]} 且不重不漏")
+        sys.exit(f"{f.name}：頁碼應為 {plist[0]}–{plist[-1]}（含據他本補入的頁）且不重不漏")
     for p, m in pages.items():
         for i, seg in enumerate(m):
             where = f"{f.name} 第 {p} 頁第 {i + 1} 句"
@@ -493,7 +499,8 @@ def main():
             continue
         r = j["ranges"][0]
         vol, pages = r["vol"], local[r["vol"]]
-        plist = [p for p in range(r["from"], r["to"] + 1)]
+        alt = {page_no(k) for k in ws.get("alt", {}).get(str(vol), {})}
+        plist = sorted([*range(r["from"], r["to"] + 1), *(p for p in alt if r["from"] < p < r["to"])])
         for p in plist:
             pages.setdefault(p, {"segs": [], "heads": []})
             covered.add((vol, p))
@@ -518,6 +525,8 @@ def main():
                 if len(seg) == 2:
                     seg.append("c" if COMMENT_RE.match(seg[0]) else "")
             entry = {"p": p, "m": segs}
+            if p in alt:
+                entry["a"] = 1          # 圖和維基文庫頁面取自他本，地址在 toc.json 的 alt 裡
             q = quality.get(str(p))
             if q is not None:
                 entry["q"] = q
@@ -561,7 +570,7 @@ def main():
 
     (OUT / "toc.json").write_text(json.dumps({
         "fetched": ws["fetched"], "work": ws["work"], "index": ws["index"],
-        "files": ws["files"], "juan": toc,
+        "files": ws["files"], "alt": ws.get("alt", {}), "juan": toc,
     }, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     shutil.copy(SRC / "variants.json", OUT / "variants.json")
 
